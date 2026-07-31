@@ -1,0 +1,12 @@
+*.csv
+*.zip
+__pycache__/
+build/
+dist/
+*.spec
+job_env/
+.DS_Store
+figureoutheaders.py
+MatchwithSicCode.py
+SearchforJobs.py
+master_job_search.py
