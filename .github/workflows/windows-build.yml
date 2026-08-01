@@ -1,0 +1,29 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: pip install pandas requests beautifulsoup4 pyinstaller
+
+    - name: Compile Windows EXE
+      run: pyinstaller --onefile Source-Code/master_job_search.py
+
+    - name: Upload Windows EXE
+      uses: actions/upload-artifact@v3
+      with:
+        name: job-hunter-pro.exe
+        path: dist/master_job_search.exe

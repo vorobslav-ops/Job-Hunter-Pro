@@ -31,14 +31,20 @@ You do not need to install Python to run this app. Pre-compiled standalone binar
 ---
 
 ## 💻 How to Run from Source (For Developers)
-1. Clone this repository:
-   git clone https://github.com/r3mk1ra/Job-Hunter-Pro.git
+1. **Clone this repository:**
+   git clone [https://github.com/vorobslav-ops/Job-Hunter-Pro.git](https://github.com/vorobslav-ops/Job-Hunter-Pro.git)
    cd Job-Hunter-Pro
-2. Install dependencies:
+
+2. **Install dependencies:**
    pip install -r requirements.txt
-3. Get free API credentials from developer.adzuna.com.
-4. Add your keys to `APP_ID` and `APP_KEY` inside `Source-Code/master_job_search.py`.
-5. Run the script:
+
+3. **Get your free Adzuna API keys:**
+   Go to developer.adzuna.com and register for a free account. Create a new application in your developer dashboard to generate your unique App ID and App Key.
+
+4. **Add the keys to the script:**
+   Open the `Source-Code/master_job_search.py` file in your preferred text editor. Locate the Configuration section near the top of the file. Replace the placeholder text `YOUR_ADZUNA_APP_ID` and `YOUR_ADZUNA_APP_KEY` with your actual credentials. Save the file.
+
+5. **Run the script:**
    python3 Source-Code/master_job_search.py
 
 ---
