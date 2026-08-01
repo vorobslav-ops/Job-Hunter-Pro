@@ -19,8 +19,11 @@ MATCHED_SPONSORS_FILE = os.path.join(BASE_DIR, 'matched_sponsors_with_industries
 FINAL_OUTPUT = os.path.join(BASE_DIR, 'nuclear_matches.csv')
 
 # Adzuna API Credentials (Replace with placeholders for public upload)
-APP_ID = 'YOUR_ADZUNA_APP_ID'
-APP_KEY = 'YOUR_ADZUNA_APP_KEY'
+# Adzuna API Credentials - Interactive Prompts
+print("\n[!] Adzuna API Credentials Required")
+print("    Get your free keys at developer.adzuna.com")
+APP_ID = input("Enter your Adzuna App ID: ").strip()
+APP_KEY = input("Enter your Adzuna App Key: ").strip()
 
 print("\n" + "="*50)
 print("🚀 LAUNCHING JOB HUNTER PRO")

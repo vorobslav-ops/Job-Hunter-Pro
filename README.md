@@ -14,37 +14,43 @@ An automated, terminal-based application that cross-references the UK Government
 
 ---
 
+## 🔑 Prerequisite: Get Free Adzuna API Credentials
+Whether you run the pre-compiled app or run from source code, you need a free API key:
+1. Go to [developer.adzuna.com](https://developer.adzuna.com/) and register for a free account.
+2. Create a new application in your developer dashboard to generate your unique **App ID** and **App Key**.
+
+---
+
 ## 🛠️ How to Use (No Python Required)
-You do not need to install Python to run this app. Pre-compiled standalone binaries are provided for both Linux and Windows.
+Pre-compiled standalone binaries are provided for both Linux and Windows. 
 
 ### For Linux (Pop!_OS / Ubuntu):
-1. Open the `Linux-Build` folder.
+1. Open your terminal in the `Linux-Build` folder.
 2. Make the file executable:
    chmod +x job-hunter-pro-linux
 3. Run the application:
    ./job-hunter-pro-linux
+4. Enter your Adzuna `App ID` and `App Key` when prompted in the terminal.
 
 ### For Windows:
 1. Open the `Windows-Build` folder.
 2. Double-click `job-hunter-pro.exe`.
+3. Enter your Adzuna `App ID` and `App Key` when prompted in the command window.
 
 ---
 
 ## 💻 How to Run from Source (For Developers)
 1. **Clone this repository:**
-   git clone [https://github.com/vorobslav-ops/Job-Hunter-Pro.git](https://github.com/vorobslav-ops/Job-Hunter-Pro.git)
+   git clone https://github.com/vorobslav-ops/Job-Hunter-Pro.git
    cd Job-Hunter-Pro
 
 2. **Install dependencies:**
    pip install -r requirements.txt
 
-3. **Get your free Adzuna API keys:**
-   Go to developer.adzuna.com and register for a free account. Create a new application in your developer dashboard to generate your unique App ID and App Key.
+3. **Add your keys:**
+   Open `Source-Code/master_job_search.py` in your editor and replace `YOUR_ADZUNA_APP_ID` and `YOUR_ADZUNA_APP_KEY` with your credentials.
 
-4. **Add the keys to the script:**
-   Open the `Source-Code/master_job_search.py` file in your preferred text editor. Locate the Configuration section near the top of the file. Replace the placeholder text `YOUR_ADZUNA_APP_ID` and `YOUR_ADZUNA_APP_KEY` with your actual credentials. Save the file.
-
-5. **Run the script:**
+4. **Run the script:**
    python3 Source-Code/master_job_search.py
 
 ---
