@@ -9,3 +9,4 @@ job_env/
 figureoutheaders.py
 MatchwithSicCode.py
 SearchforJobs.py
+.env
