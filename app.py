@@ -368,7 +368,7 @@ with tab4:
                         
                 service = build('gmail', 'v1', credentials=creds)
                 
-                # 2. Fetch Emails (Increased to 100)
+                # 2. Fetch Emails (Limit set to 400)
                 query = "is:unread newer_than:14d"
                 results = service.users().messages().list(userId='me', q=query, maxResults=400).execute()
                 messages = results.get('messages', [])
@@ -383,7 +383,16 @@ with tab4:
                     
                     for idx, msg in enumerate(messages):
                         msg_id = msg['id']
-                        txt = service.users().messages().get(userId='me', id=msg_id, format='full').execute()
+                        
+                        # Rate Limit Fail-Safe
+                        try:
+                            txt = service.users().messages().get(userId='me', id=msg_id, format='full').execute()
+                        except Exception as api_error:
+                            if "403" in str(api_error) or "Quota" in str(api_error) or "rateLimit" in str(api_error):
+                                st.warning(f"⚠️ Gmail API per-minute limit reached. Gracefully pausing fetch and displaying the {idx} emails successfully processed so far.")
+                                break
+                            continue
+                            
                         headers = txt['payload'].get('headers', [])
                         
                         subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
@@ -451,9 +460,12 @@ Label:"""
                         
                         progress_bar.progress((idx + 1) / len(messages))
                         
-                    st.session_state.email_data = email_data
-                    st.session_state.ai_logs = ai_logs
-                    st.success(f"Successfully classified {len(messages)} unread emails!")
+                    if email_data:
+                        st.session_state.email_data = email_data
+                        st.session_state.ai_logs = ai_logs
+                        st.success(f"Successfully classified {len(email_data)} unread emails!")
+                    else:
+                        st.error("Could not fetch any emails due to API limits. Please wait 60 seconds and try again.")
                         
             except Exception as e:
                 st.error("🚨 An error occurred while running the ATS Inbox Sync.")
