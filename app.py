@@ -479,39 +479,59 @@ Label:"""
         filter_choice = st.radio("Filter by Category:", ["All", "Interview", "Next_Steps", "Rejection", "Other"], horizontal=True)
         if filter_choice != "All":
             df_emails = df_emails[df_emails['AI Status'].str.contains(filter_choice)]
+            
+        # Insert a boolean selection column at the front of the dataframe
+        df_emails.insert(0, "Select", False)
         
-        st.data_editor(
+        # Capture the dataframe output to read the checkbox states
+        edited_df = st.data_editor(
             df_emails,
             column_config={
+                "Select": st.column_config.CheckboxColumn("Mark Read", default=False),
                 "Msg_ID": None,  # Hide the ID from the UI
-                "Link": st.column_config.LinkColumn("Open Thread")
+                "Link": st.column_config.LinkColumn("Open Thread", disabled=True),
+                "Sender": st.column_config.TextColumn("Sender", disabled=True),
+                "Subject": st.column_config.TextColumn("Subject", disabled=True),
+                "AI Status": st.column_config.TextColumn("AI Status", disabled=True)
             },
             hide_index=True,
             use_container_width=True
         )
         
-        # New Feature: Mark as Read via API
-        if st.button("📭 Mark these emails as Read in Gmail"):
-            with st.spinner("Communicating with Gmail..."):
-                try:
-                    creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
-                    service = build('gmail', 'v1', credentials=creds)
-                    
-                    # Iterate through the currently displayed dataframe
-                    for msg_id in df_emails['Msg_ID']:
-                        service.users().messages().modify(
-                            userId='me', 
-                            id=msg_id, 
-                            body={'removeLabelIds': ['UNREAD']}
-                        ).execute()
+        # New Feature: Mark ONLY selected emails as Read via API
+        if st.button("📭 Mark SELECTED emails as Read in Gmail"):
+            # Extract the Msg_IDs only for rows where the user checked the 'Select' box
+            selected_msgs = edited_df[edited_df["Select"] == True]["Msg_ID"].tolist()
+            
+            if not selected_msgs:
+                st.warning("Please check the box next to at least one email to mark it as read.")
+            else:
+                with st.spinner("Communicating with Gmail..."):
+                    try:
+                        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+                        service = build('gmail', 'v1', credentials=creds)
                         
-                    st.success("Inbox updated! The emails shown above are now marked as read.")
-                    # Clear the session state so they disappear on next refresh
-                    st.session_state.email_data = None
-                    time.sleep(2)
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Failed to update Gmail: {e}")
+                        # Iterate through ONLY the selected messages
+                        for msg_id in selected_msgs:
+                            service.users().messages().modify(
+                                userId='me', 
+                                id=msg_id, 
+                                body={'removeLabelIds': ['UNREAD']}
+                            ).execute()
+                            
+                        st.success(f"Inbox updated! {len(selected_msgs)} emails are now marked as read.")
+                        
+                        # Dynamically remove the read emails from session state so the UI stays clean without re-fetching
+                        st.session_state.email_data = [email for email in st.session_state.email_data if email["Msg_ID"] not in selected_msgs]
+                        
+                        # If we just marked the very last email as read, clear the state entirely
+                        if not st.session_state.email_data:
+                            st.session_state.email_data = None
+                            
+                        time.sleep(1.5)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to update Gmail: {e}")
         
         with st.expander("🛠️ View AI Decision Logs"):
             full_log_text = "\n".join(st.session_state.ai_logs)
