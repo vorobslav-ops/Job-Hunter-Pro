@@ -1,3 +1,9 @@
+import os.path
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+import ollama
 import streamlit as st
 import sqlite3
 import pandas as pd
@@ -50,7 +56,7 @@ def load_sponsors():
 
 sponsor_set = load_sponsors()
 
-tab1, tab2, tab3 = st.tabs(["🎯 Review Queue", "📊 My ATS Dashboard", "⚙️ Update Sponsor Database"])
+tab1, tab2, tab3, tab4 = st.tabs(["🎯 Review Queue", "📊 My ATS Dashboard", "⚙️ Update Sponsor Database", "📨 ATS Inbox"])
 
 # ==========================================
 # TAB 1: REVIEW QUEUE
@@ -325,3 +331,123 @@ with tab3:
             status.update(label="Heavy Data Merge Complete!", state="complete")
         
         st.success("Sponsor database rebuilt successfully! The app is ready to hunt.")
+# ==========================================
+# TAB 4: ATS INBOX (Ollama + Gmail)
+# ==========================================
+with tab4:
+    st.header("📨 Autonomous AI Inbox Sorter")
+    st.write("Securely fetches recent unread job-related emails and classifies them locally using Ollama.")
+    
+    if st.button("🔄 Sync & Classify Unread Emails", type="primary"):
+        with st.spinner("Authenticating and waking up local AI..."):
+            try:
+                SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+                creds = None
+                
+                # 1. Authenticate with Gmail
+                if os.path.exists('token.json'):
+                    creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+                if not creds or not creds.valid:
+                    if creds and creds.expired and creds.refresh_token:
+                        creds.refresh(Request())
+                    else:
+                        flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+                        creds = flow.run_local_server(port=0)
+                    with open('token.json', 'w') as token:
+                        token.write(creds.to_json())
+                        
+                service = build('gmail', 'v1', credentials=creds)
+                
+                # 2. Fetch Emails (Last 14 days, Unread only, targeted keywords)
+                query = "is:unread newer_than:14d (interview OR application OR status OR rejection OR update OR next steps)"
+                results = service.users().messages().list(userId='me', q=query, maxResults=15).execute()
+                messages = results.get('messages', [])
+                
+                if not messages:
+                    st.info("No recent unread job-related emails found.")
+                else:
+                    email_data = []
+                    ai_logs = []
+                    progress_bar = st.progress(0)
+                    
+                    for idx, msg in enumerate(messages):
+                        msg_id = msg['id']
+                        txt = service.users().messages().get(userId='me', id=msg_id, format='full').execute()
+                        headers = txt['payload'].get('headers', [])
+                        
+                        subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
+                        sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'Unknown')
+                        snippet = txt.get('snippet', '')
+                        
+                        # 3. Classify with Local Ollama
+                        prompt = f"""Act as a strict recruitment email classifier. Read this email data and return exactly one label from the list: [Interview, Rejection, Next_Steps, Other]. Do not output any other text.
+                        Definitions:
+                        - Interview: Invitations to schedule a call, Zoom, or on-site meeting.
+                        - Rejection: Notifications that the company is moving forward with other candidates.
+                        - Next_Steps: Requests for more information, assessments, or application updates.
+                        - Other: Marketing, job alerts, or general newsletters.
+
+                        Sender: {sender}
+                        Subject: {subject}
+                        Snippet: {snippet}"""
+                        
+                        raw_response = ""
+                        try:
+                            response = ollama.chat(model='phi3', messages=[{'role': 'user', 'content': prompt}])
+                            raw_response = response['message']['content'].strip()
+                            ai_status = raw_response.replace(".", "")
+                            
+                            valid_statuses = ['Interview', 'Rejection', 'Next_Steps', 'Other']
+                            if not any(status in ai_status for status in valid_statuses):
+                                ai_status = 'Other'
+                            else:
+                                # Ensure strict matching if AI includes extra punctuation
+                                for v in valid_statuses:
+                                    if v in ai_status:
+                                        ai_status = v
+                                        break
+                                        
+                        except Exception as e:
+                            ai_status = 'Ollama Offline'
+                            raw_response = f"Error: {str(e)}"
+                            
+                        # Store logging data for transparency
+                        ai_logs.append(f"**Subject:** {subject}\n\n**Raw AI Output:** `{raw_response}`\n\n**Final Tag:** {ai_status}\n\n---")
+
+                        email_data.append({
+                            "Sender": sender[:30] + "..." if len(sender) > 30 else sender,
+                            "Subject": subject,
+                            "AI Status": ai_status,
+                            "Link": f"https://mail.google.com/mail/u/0/#inbox/{msg_id}"
+                        })
+                        
+                        progress_bar.progress((idx + 1) / len(messages))
+                        
+                if messages:
+                    # 4. Render the Dataframe
+                    st.success(f"Classified {len(messages)} unread emails!")
+                    
+                    df_emails = pd.DataFrame(email_data)
+                    
+                    filter_choice = st.radio("Filter by Category:", ["All", "Interview", "Next_Steps", "Rejection", "Other"], horizontal=True)
+                    if filter_choice != "All":
+                        df_emails = df_emails[df_emails['AI Status'].str.contains(filter_choice)]
+                    
+                    st.data_editor(
+                        df_emails,
+                        column_config={
+                            "Link": st.column_config.LinkColumn("Open Thread")
+                        },
+                        hide_index=True,
+                        use_container_width=True
+                    )
+                    
+                    # 5. Render AI Auditing Logs
+                    with st.expander("🛠️ View AI Decision Logs"):
+                        for log in ai_logs:
+                            st.markdown(log)
+                            
+            except Exception as e:
+                st.error("🚨 An error occurred while running the ATS Inbox Sync.")
+                st.exception(e)
+                st.info("Check that your 'credentials.json' file is present in the directory and that your internet connection is active.")

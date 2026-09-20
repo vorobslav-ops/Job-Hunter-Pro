@@ -10,3 +10,6 @@ figureoutheaders.py
 MatchwithSicCode.py
 SearchforJobs.py
 .env
+credentials.json
+token.json
+.env

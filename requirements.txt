@@ -3,3 +3,11 @@ requests
 beautifulsoup4
 streamlit
 python-dotenv
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+ollama
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+ollama
