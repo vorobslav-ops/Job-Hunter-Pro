@@ -346,10 +346,12 @@ with tab4:
     st.header("📨 Autonomous AI Inbox Sorter")
     st.write("Securely fetches recent unread emails and classifies them locally using Ollama.")
     
+    # We must use modify scope to remove the UNREAD label
+    SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
+    
     if st.button("🔄 Sync & Classify Unread Emails", type="primary"):
         with st.spinner("Authenticating and waking up local AI (this may take a moment for many emails)..."):
             try:
-                SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
                 creds = None
                 
                 # 1. Authenticate with Gmail
@@ -366,9 +368,9 @@ with tab4:
                         
                 service = build('gmail', 'v1', credentials=creds)
                 
-                # 2. Fetch Emails (Broadened query to catch forwarded emails, increased limit to 50)
+                # 2. Fetch Emails (Increased to 100)
                 query = "is:unread newer_than:14d"
-                results = service.users().messages().list(userId='me', q=query, maxResults=50).execute()
+                results = service.users().messages().list(userId='me', q=query, maxResults=400).execute()
                 messages = results.get('messages', [])
                 
                 if not messages:
@@ -388,14 +390,14 @@ with tab4:
                         sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'Unknown')
                         snippet = txt.get('snippet', '')
                         
-                        # 3. Classify with Local Ollama (Rigid Prompting + Deterministic Temperature)
+                        # 3. Classify with Local Ollama (Smarter Prompt definitions)
                         prompt = f"""Categorize this email into exactly one label: Interview, Rejection, Next_Steps, Other.
 
 Definitions:
-- Interview: Invitations to schedule a call, Zoom, or on-site meeting.
-- Rejection: Notifications that the company is moving forward with other candidates.
-- Next_Steps: Requests for more information, assessments, or application updates.
-- Other: Marketing, job alerts, newsletters, Twitch/gaming notifications, or anything else.
+- Interview: Calendar invitations, Zoom links, or direct emails from a human to schedule a meeting/call.
+- Rejection: Direct emails from a company stating you were not selected or they are moving forward with other candidates.
+- Next_Steps: Direct emails from a company requesting you to complete an assessment, provide a portfolio, or send references.
+- Other: Automated job alerts (TotalJobs, LinkedIn, Indeed), generic marketing, newsletters, spam, or platform notifications. Job alerts are ALWAYS "Other".
 
 Output ONLY the label. Do not write explanations.
 
@@ -407,7 +409,6 @@ Label:"""
 
                         raw_response = ""
                         try:
-                            # Temperature 0.0 prevents hallucinations and conversational run-on
                             response = ollama.chat(
                                 model='phi3',
                                 messages=[
@@ -418,20 +419,16 @@ Label:"""
                             )
                             raw_response = response['message']['content'].strip()
                             
-                            # Clean markdown bolding, quotes, colons, and common prefixes
                             cleaned = raw_response.replace("*", "").replace("`", "").replace(":", " ").replace(".", " ")
                             tokens = [t for t in cleaned.split() if t.lower() not in ['label', 'category', 'status']]
                             first_token = tokens[0] if tokens else ""
                             
                             valid_statuses = ['Interview', 'Rejection', 'Next_Steps', 'Other']
-                            
-                            # Match against valid statuses ignoring case
                             matched = next((v for v in valid_statuses if v.lower() == first_token.lower()), None)
                             
                             if matched:
                                 ai_status = matched
                             else:
-                                # Safe fallback if the first token wasn't an exact match
                                 ai_status = 'Other'
                                 for v in valid_statuses:
                                     if v.lower() in raw_response[:30].lower():
@@ -442,10 +439,10 @@ Label:"""
                             ai_status = 'Ollama Offline'
                             raw_response = f"Error: {str(e)}"
                             
-                        # Store logging data
                         ai_logs.append(f"**Subject:** {subject}\n\n**Raw AI Output:** `{raw_response}`\n\n**Final Tag:** {ai_status}\n\n---")
 
                         email_data.append({
+                            "Msg_ID": msg_id,
                             "Sender": sender[:30] + "..." if len(sender) > 30 else sender,
                             "Subject": subject,
                             "AI Status": ai_status,
@@ -454,7 +451,6 @@ Label:"""
                         
                         progress_bar.progress((idx + 1) / len(messages))
                         
-                    # Save results to session state so they survive radio button clicks
                     st.session_state.email_data = email_data
                     st.session_state.ai_logs = ai_logs
                     st.success(f"Successfully classified {len(messages)} unread emails!")
@@ -462,9 +458,9 @@ Label:"""
             except Exception as e:
                 st.error("🚨 An error occurred while running the ATS Inbox Sync.")
                 st.exception(e)
-                st.info("Check that your 'credentials.json' file is present in the directory and that your internet connection is active.")
+                st.info("Ensure 'credentials.json' is present and you have deleted your old 'token.json' to accept the new permissions.")
 
-    # 4. Render the Dataframe (Outside the button click, utilizing Session State)
+    # 4. Render the Dataframe and Mark as Read Button
     if st.session_state.email_data is not None:
         df_emails = pd.DataFrame(st.session_state.email_data)
         
@@ -475,26 +471,44 @@ Label:"""
         st.data_editor(
             df_emails,
             column_config={
+                "Msg_ID": None,  # Hide the ID from the UI
                 "Link": st.column_config.LinkColumn("Open Thread")
             },
             hide_index=True,
             use_container_width=True
         )
         
+        # New Feature: Mark as Read via API
+        if st.button("📭 Mark these emails as Read in Gmail"):
+            with st.spinner("Communicating with Gmail..."):
+                try:
+                    creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+                    service = build('gmail', 'v1', credentials=creds)
+                    
+                    # Iterate through the currently displayed dataframe
+                    for msg_id in df_emails['Msg_ID']:
+                        service.users().messages().modify(
+                            userId='me', 
+                            id=msg_id, 
+                            body={'removeLabelIds': ['UNREAD']}
+                        ).execute()
+                        
+                    st.success("Inbox updated! The emails shown above are now marked as read.")
+                    # Clear the session state so they disappear on next refresh
+                    st.session_state.email_data = None
+                    time.sleep(2)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to update Gmail: {e}")
+        
         with st.expander("🛠️ View AI Decision Logs"):
-            # 1. Join all logs into a single text string
             full_log_text = "\n".join(st.session_state.ai_logs)
-            
-            # 2. Generate a downloadable text file
             st.download_button(
                 label="📥 Download Logs for AI Troubleshooting",
                 data=full_log_text,
                 file_name=f"ai_logs_{datetime.now().strftime('%Y%m%d')}.txt",
                 mime="text/plain"
             )
-            
             st.divider()
-            
-            # 3. Display them in the UI as usual
             for log in st.session_state.ai_logs:
                 st.markdown(log)
