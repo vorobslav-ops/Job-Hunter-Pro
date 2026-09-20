@@ -26,15 +26,15 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pyinstaller pandas requests beautifulsoup4 google-api-python-client google-auth-httplib2 google-auth-oauthlib ollama
+        pip install pyinstaller pandas requests beautifulsoup4 google-api-python-client google-auth-httplib2 google-auth-oauthlib ollama python-dotenv
 
     - name: Compile Windows EXE
       if: matrix.os == 'windows-latest'
-      run: pyinstaller --onefile --collect-all streamlit --hidden-import google_auth_oauthlib --hidden-import googleapiclient --hidden-import ollama --hidden-import dotenv --add-data "app.py;." --name "Job-Hunter-Pro-Windows" run_app.py
+      run: pyinstaller --onefile --collect-all streamlit --collect-all googleapiclient --hidden-import google_auth_oauthlib --hidden-import ollama --hidden-import dotenv --add-data "app.py;." --name "Job-Hunter-Pro-Windows" run_app.py
 
     - name: Compile Linux Binary
       if: matrix.os == 'ubuntu-latest'
-      run: pyinstaller --onefile --collect-all streamlit --hidden-import google_auth_oauthlib --hidden-import googleapiclient --hidden-import ollama --hidden-import dotenv --add-data "app.py:." --name "Job-Hunter-Pro-Linux" run_app.py
+      run: pyinstaller --onefile --collect-all streamlit --collect-all googleapiclient --hidden-import google_auth_oauthlib --hidden-import ollama --hidden-import dotenv --add-data "app.py:." --name "Job-Hunter-Pro-Linux" run_app.py
 
     - name: Upload Windows Artifact
       if: matrix.os == 'windows-latest'
