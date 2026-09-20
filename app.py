@@ -1,3 +1,4 @@
+import sys
 import os.path
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -18,13 +19,20 @@ from dotenv import load_dotenv
 # ==========================================
 # 1. SETUP & CONFIGURATION
 # ==========================================
-load_dotenv()
+# Force the app to use the folder where the executable is located, bypassing PyInstaller's /tmp/ extraction
+if getattr(sys, 'frozen', False):
+    EXEC_DIR = os.path.dirname(sys.executable)
+else:
+    EXEC_DIR = os.path.dirname(os.path.abspath(__file__))
+
+load_dotenv(os.path.join(EXEC_DIR, '.env'))
 APP_ID = os.getenv('ADZUNA_APP_ID')
 APP_KEY = os.getenv('ADZUNA_APP_KEY')
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MATCHED_SPONSORS_FILE = os.path.join(BASE_DIR, 'matched_sponsors_with_industries.csv')
-DB_FILE = os.path.join(BASE_DIR, 'job_tracker.db')
+MATCHED_SPONSORS_FILE = os.path.join(EXEC_DIR, 'matched_sponsors_with_industries.csv')
+DB_FILE = os.path.join(EXEC_DIR, 'job_tracker.db')
+CRED_FILE = os.path.join(EXEC_DIR, 'credentials.json')
+TOKEN_FILE = os.path.join(EXEC_DIR, 'token.json')
 
 # Initialize SQLite Database
 conn = sqlite3.connect(DB_FILE, check_same_thread=False)
@@ -80,7 +88,6 @@ with tab1:
         else:
             with st.spinner("Querying Adzuna and cross-referencing sponsors..."):
                 found_jobs = []
-                # Split the input into a list of individual job titles
                 search_titles = [q.strip() for q in query.split(',') if q.strip()]
                 
                 for title in search_titles:
@@ -122,7 +129,6 @@ with tab1:
                 st.session_state.current_index = 0
                 st.rerun()
 
-    # Card Display
     if st.session_state.job_results:
         total = len(st.session_state.job_results)
         idx = st.session_state.current_index
@@ -133,7 +139,6 @@ with tab1:
             st.divider()
             st.caption(f"Showing lead {idx + 1} of {total}")
             
-            # Badge
             badge_color = "🟢" if "Verified" in job['reason'] else "🟡"
             st.markdown(f"### {job['title']}")
             st.markdown(f"**🏢 Company:** `{job['company']}` | **Match Type:** {badge_color} *{job['reason']}*")
@@ -170,12 +175,10 @@ with tab2:
     df = pd.read_sql_query("SELECT id, title, company, status, reason, date_applied, last_updated, link FROM applications ORDER BY id DESC", conn)
     
     if not df.empty:
-        # Calculate 30-day Follow Up
         applied_dates = pd.to_datetime(df['date_applied'], errors='coerce')
         days_passed = (pd.Timestamp.now() - applied_dates).dt.days
         df['Follow-Up Needed?'] = (days_passed >= 30) & (df['status'] == 'Applied')
         
-        # Follow-Up Metric Highlights
         follow_ups_count = df['Follow-Up Needed?'].sum()
         col_m1, col_m2, col_m3 = st.columns(3)
         col_m1.metric("Total Applications", len(df))
@@ -252,7 +255,7 @@ with tab3:
             if csv_link.startswith('/'):
                 csv_link = "https://www.gov.uk" + csv_link
             
-            SPONSOR_FILE = os.path.join(BASE_DIR, csv_link.split('/')[-1])
+            SPONSOR_FILE = os.path.join(EXEC_DIR, csv_link.split('/')[-1])
             with open(SPONSOR_FILE, 'wb') as f:
                 f.write(requests.get(csv_link).content)
             st.write("✅ GOV.UK file ready.")
@@ -271,7 +274,7 @@ with tab3:
             if not zip_link.startswith('http'):
                 zip_link = "https://download.companieshouse.gov.uk/" + zip_link
                 
-            zip_file_path = os.path.join(BASE_DIR, zip_link.split('/')[-1])
+            zip_file_path = os.path.join(EXEC_DIR, zip_link.split('/')[-1])
             
             if not os.path.exists(zip_file_path):
                 with open(zip_file_path, 'wb') as f:
@@ -283,9 +286,9 @@ with tab3:
             st.write("📦 3/4 Extracting Massive CSV Database...")
             with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
                 csv_filename = zip_ref.namelist()[0]
-                BIG_FILE = os.path.join(BASE_DIR, csv_filename)
+                BIG_FILE = os.path.join(EXEC_DIR, csv_filename)
                 if not os.path.exists(BIG_FILE):
-                    zip_ref.extract(csv_filename, BASE_DIR)
+                    zip_ref.extract(csv_filename, EXEC_DIR)
             st.write("✅ Extraction complete.")
 
             st.write("🧠 4/4 Cross-Referencing Databases & Filtering Industries...")
@@ -331,6 +334,7 @@ with tab3:
             status.update(label="Heavy Data Merge Complete!", state="complete")
         
         st.success("Sponsor database rebuilt successfully! The app is ready to hunt.")
+
 # ==========================================
 # TAB 4: ATS INBOX (Ollama + Gmail)
 # ==========================================
@@ -345,15 +349,15 @@ with tab4:
                 creds = None
                 
                 # 1. Authenticate with Gmail
-                if os.path.exists('token.json'):
-                    creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+                if os.path.exists(TOKEN_FILE):
+                    creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
                 if not creds or not creds.valid:
                     if creds and creds.expired and creds.refresh_token:
                         creds.refresh(Request())
                     else:
-                        flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+                        flow = InstalledAppFlow.from_client_secrets_file(CRED_FILE, SCOPES)
                         creds = flow.run_local_server(port=0)
-                    with open('token.json', 'w') as token:
+                    with open(TOKEN_FILE, 'w') as token:
                         token.write(creds.to_json())
                         
                 service = build('gmail', 'v1', credentials=creds)
