@@ -388,30 +388,53 @@ with tab4:
                         sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'Unknown')
                         snippet = txt.get('snippet', '')
                         
-                        # 3. Classify with Local Ollama
-                        prompt = f"""Act as a strict recruitment email classifier. Read this email data and return exactly one label from the list: [Interview, Rejection, Next_Steps, Other]. Do not output any other text.
-                        Definitions:
-                        - Interview: Invitations to schedule a call, Zoom, or on-site meeting.
-                        - Rejection: Notifications that the company is moving forward with other candidates.
-                        - Next_Steps: Requests for more information, assessments, or application updates.
-                        - Other: Marketing, job alerts, newsletters, or anything unrelated to a job application.
+                        # 3. Classify with Local Ollama (Rigid Prompting + Deterministic Temperature)
+                        prompt = f"""Categorize this email into exactly one label: Interview, Rejection, Next_Steps, Other.
 
-                        Sender: {sender}
-                        Subject: {subject}
-                        Snippet: {snippet}"""
-                        
+Definitions:
+- Interview: Invitations to schedule a call, Zoom, or on-site meeting.
+- Rejection: Notifications that the company is moving forward with other candidates.
+- Next_Steps: Requests for more information, assessments, or application updates.
+- Other: Marketing, job alerts, newsletters, Twitch/gaming notifications, or anything else.
+
+Output ONLY the label. Do not write explanations.
+
+Sender: {sender}
+Subject: {subject}
+Snippet: {snippet}
+
+Label:"""
+
                         raw_response = ""
                         try:
-                            response = ollama.chat(model='phi3', messages=[{'role': 'user', 'content': prompt}])
+                            # Temperature 0.0 prevents hallucinations and conversational run-on
+                            response = ollama.chat(
+                                model='phi3',
+                                messages=[
+                                    {'role': 'system', 'content': 'You are a strict data classifier. Output only one word: Interview, Rejection, Next_Steps, or Other.'},
+                                    {'role': 'user', 'content': prompt}
+                                ],
+                                options={'temperature': 0.0}
+                            )
                             raw_response = response['message']['content'].strip()
-                            ai_status = raw_response.replace(".", "")
+                            
+                            # Clean markdown bolding, quotes, colons, and common prefixes
+                            cleaned = raw_response.replace("*", "").replace("`", "").replace(":", " ").replace(".", " ")
+                            tokens = [t for t in cleaned.split() if t.lower() not in ['label', 'category', 'status']]
+                            first_token = tokens[0] if tokens else ""
                             
                             valid_statuses = ['Interview', 'Rejection', 'Next_Steps', 'Other']
-                            if not any(status in ai_status for status in valid_statuses):
-                                ai_status = 'Other'
+                            
+                            # Match against valid statuses ignoring case
+                            matched = next((v for v in valid_statuses if v.lower() == first_token.lower()), None)
+                            
+                            if matched:
+                                ai_status = matched
                             else:
+                                # Safe fallback if the first token wasn't an exact match
+                                ai_status = 'Other'
                                 for v in valid_statuses:
-                                    if v in ai_status:
+                                    if v.lower() in raw_response[:30].lower():
                                         ai_status = v
                                         break
                                         
