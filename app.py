@@ -44,11 +44,15 @@ c.execute('''CREATE TABLE IF NOT EXISTS applications
              date_applied TEXT, last_updated TEXT)''')
 conn.commit()
 
-# Session State for Job Queue
+# Session State for Job Queue and Inbox Sorter
 if 'job_results' not in st.session_state:
     st.session_state.job_results = []
 if 'current_index' not in st.session_state:
     st.session_state.current_index = 0
+if 'email_data' not in st.session_state:
+    st.session_state.email_data = None
+if 'ai_logs' not in st.session_state:
+    st.session_state.ai_logs = []
 
 st.set_page_config(page_title="Job Hunter Pro ATS", page_icon="🚀", layout="wide")
 st.title("🚀 Job Hunter Pro Dashboard & ATS")
@@ -340,10 +344,10 @@ with tab3:
 # ==========================================
 with tab4:
     st.header("📨 Autonomous AI Inbox Sorter")
-    st.write("Securely fetches recent unread job-related emails and classifies them locally using Ollama.")
+    st.write("Securely fetches recent unread emails and classifies them locally using Ollama.")
     
     if st.button("🔄 Sync & Classify Unread Emails", type="primary"):
-        with st.spinner("Authenticating and waking up local AI..."):
+        with st.spinner("Authenticating and waking up local AI (this may take a moment for many emails)..."):
             try:
                 SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
                 creds = None
@@ -362,13 +366,14 @@ with tab4:
                         
                 service = build('gmail', 'v1', credentials=creds)
                 
-                # 2. Fetch Emails (Last 14 days, Unread only, targeted keywords)
-                query = "is:unread newer_than:14d (interview OR application OR status OR rejection OR update OR next steps)"
-                results = service.users().messages().list(userId='me', q=query, maxResults=15).execute()
+                # 2. Fetch Emails (Broadened query to catch forwarded emails, increased limit to 50)
+                query = "is:unread newer_than:14d"
+                results = service.users().messages().list(userId='me', q=query, maxResults=50).execute()
                 messages = results.get('messages', [])
                 
                 if not messages:
-                    st.info("No recent unread job-related emails found.")
+                    st.info("No recent unread emails found.")
+                    st.session_state.email_data = None
                 else:
                     email_data = []
                     ai_logs = []
@@ -389,7 +394,7 @@ with tab4:
                         - Interview: Invitations to schedule a call, Zoom, or on-site meeting.
                         - Rejection: Notifications that the company is moving forward with other candidates.
                         - Next_Steps: Requests for more information, assessments, or application updates.
-                        - Other: Marketing, job alerts, or general newsletters.
+                        - Other: Marketing, job alerts, newsletters, or anything unrelated to a job application.
 
                         Sender: {sender}
                         Subject: {subject}
@@ -405,7 +410,6 @@ with tab4:
                             if not any(status in ai_status for status in valid_statuses):
                                 ai_status = 'Other'
                             else:
-                                # Ensure strict matching if AI includes extra punctuation
                                 for v in valid_statuses:
                                     if v in ai_status:
                                         ai_status = v
@@ -415,7 +419,7 @@ with tab4:
                             ai_status = 'Ollama Offline'
                             raw_response = f"Error: {str(e)}"
                             
-                        # Store logging data for transparency
+                        # Store logging data
                         ai_logs.append(f"**Subject:** {subject}\n\n**Raw AI Output:** `{raw_response}`\n\n**Final Tag:** {ai_status}\n\n---")
 
                         email_data.append({
@@ -427,31 +431,33 @@ with tab4:
                         
                         progress_bar.progress((idx + 1) / len(messages))
                         
-                if messages:
-                    # 4. Render the Dataframe
-                    st.success(f"Classified {len(messages)} unread emails!")
-                    
-                    df_emails = pd.DataFrame(email_data)
-                    
-                    filter_choice = st.radio("Filter by Category:", ["All", "Interview", "Next_Steps", "Rejection", "Other"], horizontal=True)
-                    if filter_choice != "All":
-                        df_emails = df_emails[df_emails['AI Status'].str.contains(filter_choice)]
-                    
-                    st.data_editor(
-                        df_emails,
-                        column_config={
-                            "Link": st.column_config.LinkColumn("Open Thread")
-                        },
-                        hide_index=True,
-                        use_container_width=True
-                    )
-                    
-                    # 5. Render AI Auditing Logs
-                    with st.expander("🛠️ View AI Decision Logs"):
-                        for log in ai_logs:
-                            st.markdown(log)
-                            
+                    # Save results to session state so they survive radio button clicks
+                    st.session_state.email_data = email_data
+                    st.session_state.ai_logs = ai_logs
+                    st.success(f"Successfully classified {len(messages)} unread emails!")
+                        
             except Exception as e:
                 st.error("🚨 An error occurred while running the ATS Inbox Sync.")
                 st.exception(e)
                 st.info("Check that your 'credentials.json' file is present in the directory and that your internet connection is active.")
+
+    # 4. Render the Dataframe (Outside the button click, utilizing Session State)
+    if st.session_state.email_data is not None:
+        df_emails = pd.DataFrame(st.session_state.email_data)
+        
+        filter_choice = st.radio("Filter by Category:", ["All", "Interview", "Next_Steps", "Rejection", "Other"], horizontal=True)
+        if filter_choice != "All":
+            df_emails = df_emails[df_emails['AI Status'].str.contains(filter_choice)]
+        
+        st.data_editor(
+            df_emails,
+            column_config={
+                "Link": st.column_config.LinkColumn("Open Thread")
+            },
+            hide_index=True,
+            use_container_width=True
+        )
+        
+        with st.expander("🛠️ View AI Decision Logs"):
+            for log in st.session_state.ai_logs:
+                st.markdown(log)
