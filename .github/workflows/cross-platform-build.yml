@@ -30,11 +30,11 @@ jobs:
 
     - name: Compile Windows EXE
       if: matrix.os == 'windows-latest'
-      run: pyinstaller --onefile --collect-all streamlit --add-data "app.py;." --name "Job-Hunter-Pro-Windows" run_app.py
+      run: pyinstaller --onefile --collect-all streamlit --hidden-import google_auth_oauthlib --hidden-import googleapiclient --hidden-import ollama --hidden-import dotenv --add-data "app.py;." --name "Job-Hunter-Pro-Windows" run_app.py
 
     - name: Compile Linux Binary
       if: matrix.os == 'ubuntu-latest'
-      run: pyinstaller --onefile --collect-all streamlit --add-data "app.py:." --name "Job-Hunter-Pro-Linux" run_app.py
+      run: pyinstaller --onefile --collect-all streamlit --hidden-import google_auth_oauthlib --hidden-import googleapiclient --hidden-import ollama --hidden-import dotenv --add-data "app.py:." --name "Job-Hunter-Pro-Linux" run_app.py
 
     - name: Upload Windows Artifact
       if: matrix.os == 'windows-latest'
