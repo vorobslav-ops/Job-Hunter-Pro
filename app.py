@@ -459,5 +459,19 @@ with tab4:
         )
         
         with st.expander("🛠️ View AI Decision Logs"):
+            # 1. Join all logs into a single text string
+            full_log_text = "\n".join(st.session_state.ai_logs)
+            
+            # 2. Generate a downloadable text file
+            st.download_button(
+                label="📥 Download Logs for AI Troubleshooting",
+                data=full_log_text,
+                file_name=f"ai_logs_{datetime.now().strftime('%Y%m%d')}.txt",
+                mime="text/plain"
+            )
+            
+            st.divider()
+            
+            # 3. Display them in the UI as usual
             for log in st.session_state.ai_logs:
                 st.markdown(log)
