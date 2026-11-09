@@ -37,11 +37,22 @@ TOKEN_FILE = os.path.join(EXEC_DIR, 'token.json')
 # Initialize SQLite Database
 conn = sqlite3.connect(DB_FILE, check_same_thread=False)
 c = conn.cursor()
+# Original ATS table
 c.execute('''CREATE TABLE IF NOT EXISTS applications 
              (id INTEGER PRIMARY KEY AUTOINCREMENT, 
              title TEXT, company TEXT, link TEXT, 
              snippet TEXT, reason TEXT, status TEXT, 
              date_applied TEXT, last_updated TEXT)''')
+# New table for manual non-sponsored jobs
+c.execute('''CREATE TABLE IF NOT EXISTS manual_applications 
+             (id INTEGER PRIMARY KEY AUTOINCREMENT, 
+             title TEXT, company TEXT, link TEXT, 
+             status TEXT, date_applied TEXT, last_updated TEXT)''')
+# New table for duplicate sponsored leads
+c.execute('''CREATE TABLE IF NOT EXISTS duplicate_jobs 
+             (id INTEGER PRIMARY KEY AUTOINCREMENT, 
+             title TEXT, company TEXT, link TEXT, 
+             reason TEXT, date_logged TEXT)''')
 conn.commit()
 
 # Session State for Job Queue and Inbox Sorter
@@ -68,7 +79,7 @@ def load_sponsors():
 
 sponsor_set = load_sponsors()
 
-tab1, tab2, tab3, tab4 = st.tabs(["🎯 Review Queue", "📊 My ATS Dashboard", "⚙️ Update Sponsor Database", "📨 ATS Inbox"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎯 Review Queue", "📊 My ATS Dashboard", "⚙️ Update Sponsor Database", "📨 ATS Inbox", "📝 Manual Applications"])
 
 # ==========================================
 # TAB 1: REVIEW QUEUE
@@ -90,9 +101,13 @@ with tab1:
         elif not sponsor_set:
             st.warning("VIP Sponsor list is missing! Head over to the 'Update Sponsor Database' tab to generate it.")
         else:
-            with st.spinner("Querying Adzuna and cross-referencing sponsors..."):
+            with st.spinner("Querying Adzuna, cross-referencing sponsors, and filtering duplicates..."):
                 found_jobs = []
                 search_titles = [q.strip() for q in query.split(',') if q.strip()]
+                
+                # Fetch all existing URLs from both tables to check for duplicates
+                existing_links = {row[0] for row in c.execute("SELECT link FROM applications UNION SELECT link FROM duplicate_jobs").fetchall()}
+                today = datetime.now().strftime("%Y-%m-%d")
                 
                 for title in search_titles:
                     for page in range(1, int(num_pages) + 1):
@@ -109,6 +124,7 @@ with tab1:
                             if r.status_code == 200:
                                 data = r.json()
                                 for job in data.get('results', []):
+                                    job_link = job.get('redirect_url', '#')
                                     job_title = job.get('title', 'Unknown Title')
                                     desc = job.get('description', '').upper()
                                     company = job.get('company', {}).get('display_name', 'Unknown').upper()
@@ -118,13 +134,25 @@ with tab1:
                                     mentions_visa = "SPONSOR" in desc or "VISA" in desc or "TIER 2" in desc
                                     
                                     if is_sponsor or mentions_visa:
-                                        found_jobs.append({
-                                            'title': job_title,
-                                            'company': job.get('company', {}).get('display_name', 'Unknown'),
-                                            'snippet': job.get('description', 'No description provided.'),
-                                            'link': job.get('redirect_url', '#'),
-                                            'reason': "Verified VIP Sponsor" if is_sponsor else "Mentions Visa in Posting"
-                                        })
+                                        reason = "Verified VIP Sponsor" if is_sponsor else "Mentions Visa in Posting"
+                                        
+                                        # Duplicate Tracking Logic
+                                        if job_link in existing_links:
+                                            # Log to duplicates table instead of queue
+                                            c.execute("""INSERT INTO duplicate_jobs (title, company, link, reason, date_logged) 
+                                                         VALUES (?, ?, ?, ?, ?)""", 
+                                                      (job_title, job.get('company', {}).get('display_name', 'Unknown'), job_link, reason, today))
+                                            conn.commit()
+                                        else:
+                                            # Add to queue and existing_links to prevent double-queuing in the same run
+                                            found_jobs.append({
+                                                'title': job_title,
+                                                'company': job.get('company', {}).get('display_name', 'Unknown'),
+                                                'snippet': job.get('description', 'No description provided.'),
+                                                'link': job_link,
+                                                'reason': reason
+                                            })
+                                            existing_links.add(job_link)
                             time.sleep(0.3)
                         except Exception as e:
                             st.error(f"Error fetching from Adzuna for {title}: {e}")
@@ -544,3 +572,71 @@ Label:"""
             st.divider()
             for log in st.session_state.ai_logs:
                 st.markdown(log)
+# ==========================================
+# TAB 5: MANUAL APPLICATIONS
+# ==========================================
+with tab5:
+    st.header("📝 Log Manual & Non-Sponsored Jobs")
+    st.write("Keep track of part-time roles or direct applications that weren't found via the Adzuna sponsor search.")
+    
+    # === Manual Application Logger Form ===
+    with st.expander("➕ Add New Manual Application", expanded=False):
+        with st.form("manual_log_form", clear_on_submit=True):
+            col_t, col_c = st.columns(2)
+            man_title = col_t.text_input("Job Title*")
+            man_comp = col_c.text_input("Company Name*")
+            man_link = st.text_input("Posting URL (Optional)")
+            
+            col_s, col_d = st.columns(2)
+            man_status = col_s.selectbox("Status", ["Applied", "Interview Scheduled", "Ghosted", "Rejected"])
+            man_date = col_d.date_input("Date Applied", value=datetime.today())
+            
+            if st.form_submit_button("💾 Save Manual Application", type="primary"):
+                if man_title and man_comp:
+                    today_str = datetime.now().strftime("%Y-%m-%d")
+                    date_applied_str = man_date.strftime("%Y-%m-%d")
+                    c.execute("""INSERT INTO manual_applications 
+                                 (title, company, link, status, date_applied, last_updated) 
+                                 VALUES (?, ?, ?, ?, ?, ?)""",
+                              (man_title, man_comp, man_link, man_status, date_applied_str, today_str))
+                    conn.commit()
+                    st.success(f"Successfully logged {man_title} at {man_comp}!")
+                    time.sleep(1.5)
+                    st.rerun()
+                else:
+                    st.error("Please fill in the required fields (Title and Company).")
+                    
+    st.divider()
+    
+    # === Display Manual Applications Table ===
+    df_manual = pd.read_sql_query("SELECT id, title, company, status, date_applied, last_updated, link FROM manual_applications ORDER BY id DESC", conn)
+    
+    if not df_manual.empty:
+        st.write("✏️ **Update manual application statuses below:**")
+        edited_df_manual = st.data_editor(
+            df_manual,
+            column_config={
+                "id": st.column_config.NumberColumn("ID", disabled=True),
+                "status": st.column_config.SelectboxColumn("Status", options=["Applied", "Interview Scheduled", "Ghosted", "Rejected"], required=True),
+                "link": st.column_config.LinkColumn("Posting Link"),
+                "title": st.column_config.TextColumn("Title", disabled=True),
+                "company": st.column_config.TextColumn("Company", disabled=True),
+                "date_applied": st.column_config.TextColumn("Date Applied", disabled=True),
+                "last_updated": st.column_config.TextColumn("Last Updated", disabled=True)
+            },
+            hide_index=True,
+            use_container_width=True,
+            key="manual_editor" 
+        )
+        
+        if st.button("💾 Save Manual Status Changes", type="primary"):
+            today = datetime.now().strftime("%Y-%m-%d")
+            for _, row in edited_df_manual.iterrows():
+                c.execute("UPDATE manual_applications SET status = ?, last_updated = ? WHERE id = ?", 
+                          (row['status'], today, int(row['id'])))
+            conn.commit()
+            st.success("Manual applications successfully updated!")
+            time.sleep(1.5)
+            st.rerun()
+    else:
+        st.info("No manual applications logged yet.")

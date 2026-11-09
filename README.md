@@ -2,16 +2,17 @@
 
 [![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/remkiraops)
 
-A fully visual, interactive Applicant Tracking System (ATS) web application that cross-references the UK Government's Visa Sponsor list with the Companies House database to find tech companies actively sponsoring visas, and then hunts for matching job postings on Adzuna. Now featuring a 100% offline AI email sorter!
+A fully visual, interactive Applicant Tracking System (ATS) web application that cross-references the UK Government's Visa Sponsor list with the Companies House database to find tech companies actively sponsoring visas, and then hunts for matching job postings on Adzuna. Now featuring a 100% offline AI email sorter and manual application tracking!
 
 ---
 
 ## 🧠 Core Features
 
-*   **🎯 Tab 1: Review Queue:** Pings the Adzuna API using multi-title queries to find open roles. Flags jobs instantly if the hiring company is on your VIP Sponsor List or mentions visa sponsorship, allowing you to review cards and save them to your database with one click.
-*   **📊 Tab 2: My ATS Dashboard:** A fully editable, SQLite-backed application tracking system. Manage your application statuses (Applied, Interview Scheduled, Ghosted, Rejected) with an automated 30-day follow-up alert metric.
+*   **🎯 Tab 1: Review Queue:** Pings the Adzuna API using multi-title queries to find open roles. Flags jobs instantly if the hiring company is on your VIP Sponsor List or mentions visa sponsorship. Includes an automated URL-based duplicate tracker that silently filters out leads you have already reviewed.
+*   **📊 Tab 2: My ATS Dashboard:** A fully editable, SQLite-backed application tracking system. Manage your sponsored application statuses (Applied, Interview Scheduled, Ghosted, Rejected) with an automated 30-day follow-up alert metric.
 *   **⚙️ Tab 3: The Big Merge:** A built-in data pipeline that automatically scrapes millions of rows from GOV.UK and Companies House to build your VIP list. Features dual-filtering modes: use default Tech/SaaS SIC codes or input custom 5-digit UK SIC codes directly in the UI.
 *   **📨 Tab 4: Autonomous AI Inbox Sorter:** Securely fetches recent unread job-related emails from your Gmail and classifies them completely locally (offline) into *Interview*, *Rejection*, *Next Steps*, or *Other* using the Ollama `phi3` AI model.
+*   **📝 Tab 5: Manual Applications:** A dedicated database and tracker for logging direct, non-sponsored, or part-time applications outside of the Adzuna search flow, keeping your automated queue clean.
 
 ---
 
