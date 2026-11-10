@@ -105,8 +105,9 @@ with tab1:
                 found_jobs = []
                 search_titles = [q.strip() for q in query.split(',') if q.strip()]
                 
-                # Fetch all existing URLs from both tables to check for duplicates
-                existing_links = {row[0] for row in c.execute("SELECT link FROM applications UNION SELECT link FROM duplicate_jobs").fetchall()}
+                # Fetch existing URLs and strip off the tracking parameters (everything after '?')
+                raw_existing = {row[0] for row in c.execute("SELECT link FROM applications UNION SELECT link FROM duplicate_jobs").fetchall() if row[0]}
+                existing_links = {link.split('?')[0] for link in raw_existing}
                 today = datetime.now().strftime("%Y-%m-%d")
                 
                 for title in search_titles:
@@ -124,7 +125,10 @@ with tab1:
                             if r.status_code == 200:
                                 data = r.json()
                                 for job in data.get('results', []):
-                                    job_link = job.get('redirect_url', '#')
+                                    # Grab the raw link and create a cleaned base link for comparison
+                                    raw_job_link = job.get('redirect_url', '#')
+                                    base_job_link = raw_job_link.split('?')[0] 
+                                    
                                     job_title = job.get('title', 'Unknown Title')
                                     desc = job.get('description', '').upper()
                                     company = job.get('company', {}).get('display_name', 'Unknown').upper()
@@ -136,23 +140,23 @@ with tab1:
                                     if is_sponsor or mentions_visa:
                                         reason = "Verified VIP Sponsor" if is_sponsor else "Mentions Visa in Posting"
                                         
-                                        # Duplicate Tracking Logic
-                                        if job_link in existing_links:
+                                        # Duplicate Tracking Logic using the CLEANED URL
+                                        if base_job_link in existing_links:
                                             # Log to duplicates table instead of queue
                                             c.execute("""INSERT INTO duplicate_jobs (title, company, link, reason, date_logged) 
                                                          VALUES (?, ?, ?, ?, ?)""", 
-                                                      (job_title, job.get('company', {}).get('display_name', 'Unknown'), job_link, reason, today))
+                                                      (job_title, job.get('company', {}).get('display_name', 'Unknown'), raw_job_link, reason, today))
                                             conn.commit()
                                         else:
-                                            # Add to queue and existing_links to prevent double-queuing in the same run
+                                            # Add to queue and mark clean URL as existing to prevent double-queuing
                                             found_jobs.append({
                                                 'title': job_title,
                                                 'company': job.get('company', {}).get('display_name', 'Unknown'),
                                                 'snippet': job.get('description', 'No description provided.'),
-                                                'link': job_link,
+                                                'link': raw_job_link,
                                                 'reason': reason
                                             })
-                                            existing_links.add(job_link)
+                                            existing_links.add(base_job_link)
                             time.sleep(0.3)
                         except Exception as e:
                             st.error(f"Error fetching from Adzuna for {title}: {e}")
